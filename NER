@@ -1,0 +1,171 @@
+#Import necessary packages
+#import numpy as np
+#import pandas as pd
+import nltk
+from nltk.corpus.reader.plaintext import PlaintextCorpusReader
+import codecs
+import chardet
+import glob
+import ftfy
+from nltk.corpus import stopwords
+import magic
+from nltk.stem.porter import PorterStemmer
+from nltk.corpus import wordnet
+from nltk.stem.wordnet import WordNetLemmatizer
+from nltk.chunk import conlltags2tree, tree2conlltags
+import string
+import nltk.tag, nltk.data
+
+#Testing to see how to use NLTK functions on a non-UTF8 file
+raw = open('2014-01-01.txt', 'rb').read()
+chardet.detect(raw)
+#It's Windows-1252!
+raw = raw.decode(encoding="Windows-1252", errors="strict")
+#It workds! If it's decoded. Tokenize words and sentences
+sents = nltk.sent_tokenize(raw)
+tokens = nltk.word_tokenize(raw)
+
+#Alternatively, let's try to reencode the files into UFT8 in a "SmallerCorpus"
+#(one file). Add a 1 in front to show difference.
+#read input file
+with codecs.open('2014-01-01.txt', 'r', encoding = 'Windows-1252') as file:
+  lines = file.read()
+#write output file
+with codecs.open('12014-01-01.txt', 'w', encoding = 'utf8') as file:
+  file.write(lines)
+#Check the encoding of the new file (it works)
+infile = open('12014-01-01.txt', 'rb')
+en = chardet.detect(infile.read())
+print(en)
+#Create the corpus and test if it works (it works)
+corpusdir = '/Users/kathleenyoung/Desktop/Winter 2018/IEMS 308 Data Science/HW3/SmallerCorpus'
+corpus = PlaintextCorpusReader(corpusdir, '.*')
+corpus.fileids()
+corpus.words()
+corpus.sents()
+corpus.paras()
+
+
+
+#Alright, let's try to turn this into a for loop. Tested in smallcorpus.
+#Works quickly in 2014 <3
+#Note that encoding is Windows-1252 in 2014 and Windows-1254 in 2013
+read_files = glob.glob("*.txt")
+for f in read_files:
+    with codecs.open(f"-{f}", "w", encoding = 'utf8') as outfile:
+        with codecs.open(f, 'r', encoding = 'Windows-1252') as infile:
+            lines = infile.read()
+            outfile.write(lines)
+#This one's for 2013 (except bc not everything is 1254...that's what I thought anyway)      
+read_files = glob.glob("*.txt")
+for f in read_files:
+    with codecs.open(f"-{f}", "w", encoding = 'utf8') as outfile:
+        try:
+            with codecs.open(f, 'r', encoding = 'ISO-8859-1') as infile:
+                lines = infile.read()
+                outfile.write(lines)
+        except:
+            continue
+
+
+#Alright, let's try to make a corpus...
+corpusdir = '/Users/kathleenyoung/Desktop/Winter 2018/IEMS 308 Data Science/HW3/hold'
+corpus = PlaintextCorpusReader(corpusdir, '.*')
+corpus.fileids()
+sents = corpus.sents()
+len(sents) #683261
+words = corpus.words()
+len(words) #17816364
+
+
+#Alright, let's see if we can remove stop words!
+stopWords = set(stopwords.words('english'))
+wordsFiltered = []
+
+for w in words:
+    if w not in stopWords:
+        wordsFiltered.append(w)
+len(wordsFiltered) #12064388
+
+#Normailzation
+#Removing punctuation
+#remove all tokens that are not alphabetic
+wordsNoPunct = [word for word in wordsFiltered if word.isalpha()]
+len(wordsNoPunct) #8973844
+print(words[:100])
+#Making everything lowercase
+wordsLower = [word.lower() for word in wordsNoPunct]
+
+#Stemming
+porter_stemmer = PorterStemmer()
+stemmed = [porter_stemmer.stem(word) for word in wordsLower]
+#This took a long time to run so I'm going to save the results in a file
+file = codecs.open('stemmed.txt', "w", encoding = 'utf8')
+for item in stemmed:
+  file.write("%s\n" % item)
+#Part of speech tagging
+pos = nltk.pos_tag(stemmed)
+#This also took a long time to run so I'm going to save the results in a file
+file = codecs.open('pos.txt', "w", encoding = 'utf8')
+for item in stemmed:
+  file.write("%s\n" % item)
+
+#A function that changes treebank pos encodings to wordnet pos encodings for
+#lemmatization
+def get_wordnet_pos(treebank_tag):
+
+    if treebank_tag.startswith('J'):
+        return wordnet.ADJ
+    elif treebank_tag.startswith('V'):
+        return wordnet.VERB
+    elif treebank_tag.startswith('N'):
+        return wordnet.NOUN
+    elif treebank_tag.startswith('R'):
+        return wordnet.ADV
+    else:
+        return 'n'
+
+#Separating the list of words and the list of tags
+wordsNow, tags = zip(*pos)
+#Using the treebank to wordnet function on the list of tags
+wordnetTags = [get_wordnet_pos(tag) for tag in tags] 
+#lemmatizing with 
+lemmatizer = WordNetLemmatizer()
+#Recreate the damn thing as a dictionary
+wordsAndTags = {}
+for i in range(len(wordsNow)):
+    wordsAndTags[wordsNow[i]] = wordnetTags[i]
+
+#Create lemmas, finally. Christ almighty that took a long time.
+lemmas = []
+for i in range(len(wordsNow)):
+    lemmas.append(lemmatizer.lemmatize(wordsNow[i], wordnetTags[i]))
+#one more try
+lemmaPos = list(zip(lemmas, tags))
+
+#NER
+csvData = pd.read_csv("data.csv", encoding='latin-1', header=0)
+training_tags = csvData.Tag.tolist()
+training_words = csvData.Name.tolist()
+iterate = list(range(len(training_words)))
+data = {training_words[i] : training_tags[i] for i in iterate}
+
+#Picking features
+def features(posTokens, index):
+    features = {}
+    features['prevword'], features['prevpos'] = tokens[index - 1]
+    features['prevprevword'], features['prevprevpos'] = tokens[index - 2]
+    features['nextword'], features['nextpos'] = tokens[index + 1]
+    features['nextnextword'], features['nextnextpos'] = tokens[index + 2]
+    features['contains_dash'] = '-' in word
+    features['contains_dot'] = '.' in word
+    
+train_set = nltk.classify.apply_features(features, labeled_names[500:])
+test_set = nltk.classify.apply_features(features, labeled_names[:500])
+
+#Creating and testing the tagger
+tagger = nltk.tag.UnigramTagger(model=enData)
+corpusdir1 = '/Users/kathleenyoung/Desktop/Winter 2018/IEMS 308 Data Science/HW3/SmallerCorpus'
+corpus1 = PlaintextCorpusReader(corpusdir1, '.*')
+words1 = corpus1.words()
+tagger.tag(words1)
