@@ -1,4 +1,4 @@
-# IEMS 308 HW 3: Business Insider named entity recognition project
+# IEMS 308 HW 3: Business Insider named entity recognition
 ### Kathleen Young
 
 This repository contains all of the necessary files for the Business Insider named entity recognition assignment. These files include:
